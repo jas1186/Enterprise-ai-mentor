@@ -1,10 +1,10 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Mapped, mapped_column
-from typing import List
+from sqlalchemy import Integer, String, Text, DateTime
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 class Employee(Base):
@@ -16,7 +16,7 @@ class Employee(Base):
     department: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    def __dict__(self):
+    def to_dict(self):
         return {
             "id": self.id,
             "name": self.name,
@@ -35,7 +35,7 @@ class DocumentRecord(Base):
     source: Mapped[str] = mapped_column(String(255), default="upload", nullable=False)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-    def __dict__(self):
+    def to_dict(self):
         return {
             "id": self.id,
             "filename": self.filename,

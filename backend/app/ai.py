@@ -1,19 +1,14 @@
-import os
 from pathlib import Path
 from typing import List
 
-from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.prompts import PromptTemplate
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.vectorstores import Chroma
-from langchain.docstore.document import Document
+from langchain_community.vectorstores import Chroma
+from langchain_core.documents import Document
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.core.config import CHROMA_PATH, LLM_API_KEY, LLM_MODEL
-
-if not LLM_API_KEY:
-    raise ValueError("LLM_API_KEY is required in the environment to use the RAG pipeline.")
 
 CHROMA_COLLECTION_NAME = "enterprise_ai_mentor"
 
@@ -28,13 +23,19 @@ Answer:"""
 QA_PROMPT = PromptTemplate(template=PROMPT_TEMPLATE, input_variables=["context", "question"])
 
 
+def _require_api_key() -> str:
+    if not LLM_API_KEY:
+        raise ValueError("LLM_API_KEY is required in the environment to use the RAG pipeline.")
+    return LLM_API_KEY
+
+
 def get_embeddings() -> OpenAIEmbeddings:
-    return OpenAIEmbeddings(openai_api_key=LLM_API_KEY)
+    return OpenAIEmbeddings(api_key=_require_api_key())
 
 
 def get_vector_store() -> Chroma:
     return Chroma(
-        persist_directory=Path(CHROMA_PATH),
+        persist_directory=str(Path(CHROMA_PATH)),
         embedding_function=get_embeddings(),
         collection_name=CHROMA_COLLECTION_NAME,
     )
@@ -54,13 +55,14 @@ def ingest_document(filename: str, text: str) -> None:
 
     store = get_vector_store()
     store.add_documents(documents)
-    store.persist()
+    if hasattr(store, "persist"):
+        store.persist()
 
 
 def answer_question(question: str) -> str:
     store = get_vector_store()
     retriever = store.as_retriever(search_kwargs={"k": 4})
-    llm = ChatOpenAI(openai_api_key=LLM_API_KEY, model_name=LLM_MODEL, temperature=0.0)
+    llm = ChatOpenAI(api_key=_require_api_key(), model=LLM_MODEL, temperature=0.0)
     qa = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
@@ -69,8 +71,11 @@ def answer_question(question: str) -> str:
         chain_type_kwargs={"prompt": QA_PROMPT},
     )
 
-    answer = qa.run(question)
-    if not answer or "could not find" in answer.lower():
+    answer = qa.invoke({"query": question})
+    if isinstance(answer, dict):
+        answer = answer.get("result", "")
+
+    if not answer or "could not find" in str(answer).lower():
         return "I could not find this information in the company documents."
 
-    return answer.strip()
+    return str(answer).strip()

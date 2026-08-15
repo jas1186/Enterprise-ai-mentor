@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 const initialMessages = [
   {
     id: 1,
@@ -24,7 +26,7 @@ function App() {
 
   const fetchDocuments = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/documents');
+      const response = await fetch(`${API_BASE}/api/documents`);
       const data = await response.json();
       setDocuments(data);
     } catch (error) {
@@ -35,7 +37,7 @@ function App() {
   const signup = async (event) => {
     event.preventDefault();
     try {
-      const response = await fetch('http://localhost:8000/api/signup', {
+      const response = await fetch(`${API_BASE}/api/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(signupData),
@@ -52,7 +54,7 @@ function App() {
   const login = async (event) => {
     event.preventDefault();
     try {
-      const response = await fetch('http://localhost:8000/api/login', {
+      const response = await fetch(`${API_BASE}/api/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: loginEmail }),
@@ -76,7 +78,7 @@ function App() {
     setStatus('Uploading document...');
 
     try {
-      const response = await fetch('http://localhost:8000/api/upload', {
+      const response = await fetch(`${API_BASE}/api/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -99,7 +101,7 @@ function App() {
     setInput('');
 
     try {
-      const response = await fetch('http://localhost:8000/api/chat', {
+      const response = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: input }),

@@ -4,7 +4,6 @@ from typing import List
 from pypdf import PdfReader
 from sqlalchemy.orm import Session
 
-from app.ai import ingest_document, answer_question
 from app.models import DocumentRecord
 from app.utils import ensure_upload_dir
 
@@ -19,11 +18,18 @@ def extract_text_from_pdf(file_path: str) -> str:
 
 
 def save_uploaded_document(db: Session, filename: str, content: str) -> DocumentRecord:
+    from app.ai import ingest_document
+
     document = DocumentRecord(filename=filename, content=content)
     db.add(document)
+    db.flush()
+    try:
+        ingest_document(filename, content)
+    except ValueError:
+        db.rollback()
+        raise
     db.commit()
     db.refresh(document)
-    ingest_document(filename, content)
     return document
 
 
@@ -32,4 +38,6 @@ def list_documents(db: Session) -> List[DocumentRecord]:
 
 
 def answer_with_rag(question: str) -> str:
+    from app.ai import answer_question
+
     return answer_question(question)

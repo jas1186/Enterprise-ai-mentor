@@ -1,14 +1,23 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.pool import StaticPool
+
 from app.core.config import DATABASE_URL
 from app.models import Base
 
-engine = create_engine(
-    DATABASE_URL,
-    echo=False,
-    pool_pre_ping=True,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
-)
+if "sqlite" in DATABASE_URL:
+    engine = create_engine(
+        DATABASE_URL,
+        echo=False,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+else:
+    engine = create_engine(
+        DATABASE_URL,
+        echo=False,
+        pool_pre_ping=True,
+    )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

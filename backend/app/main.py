@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import List
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -11,6 +12,18 @@ from app.database import get_db, init_db
 from app.services import answer_with_rag, extract_text_from_pdf, list_documents, save_uploaded_document
 
 app = FastAPI(title="Enterprise AI Mentor API", version="0.1.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
@@ -63,7 +76,7 @@ def signup(request: SignupRequest, db: Session = Depends(get_db)) -> dict[str, o
         db.rollback()
         raise HTTPException(status_code=400, detail="Employee already exists")
     
-    return {"message": "Signup successful", "employee": employee.__dict__()}
+    return {"message": "Signup successful", "employee": employee.to_dict()}
 
 
 @app.post("/api/login")
@@ -75,12 +88,15 @@ def login(request: LoginRequest, db: Session = Depends(get_db)) -> dict[str, obj
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
 
-    return {"message": "Login successful", "employee": employee.__dict__()}
+    return {"message": "Login successful", "employee": employee.to_dict()}
 
 
 @app.post("/api/chat")
 def chat(request: ChatRequest) -> dict[str, str]:
-    answer = answer_with_rag(request.question)
+    try:
+        answer = answer_with_rag(request.question)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     return {"answer": answer}
 
 
@@ -95,8 +111,12 @@ async def upload_document(file: UploadFile = File(...), db: Session = Depends(ge
         target.write(content)
 
     text = extract_text_from_pdf(str(upload_path))
-    document = save_uploaded_document(db, file.filename, text)
-    return {"message": "Document uploaded", "document": document.__dict__()}
+    try:
+        document = save_uploaded_document(db, file.filename, text)
+    except ValueError as exc:
+        upload_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=503, detail=str(exc))
+    return {"message": "Document uploaded", "document": document.to_dict()}
 
 
 @app.get("/api/documents", response_model=List[dict[str, str]])
