@@ -8,7 +8,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from app.core.config import CHROMA_PATH, LLM_API_KEY, LLM_MODEL
+from app.core.config import CHROMA_PATH, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL
 
 CHROMA_COLLECTION_NAME = "enterprise_ai_mentor"
 
@@ -30,7 +30,10 @@ def _require_api_key() -> str:
 
 
 def get_embeddings() -> OpenAIEmbeddings:
-    return OpenAIEmbeddings(api_key=_require_api_key())
+    options = {"api_key": _require_api_key()}
+    if LLM_BASE_URL:
+        options["base_url"] = LLM_BASE_URL
+    return OpenAIEmbeddings(**options)
 
 
 def get_vector_store() -> Chroma:
@@ -41,11 +44,11 @@ def get_vector_store() -> Chroma:
     )
 
 
-def ingest_document(filename: str, text: str) -> None:
+def ingest_document(document_id: int, filename: str, text: str, required_clearance: int, category: str, department: str | None = None) -> None:
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     chunks = splitter.split_text(text)
     documents: List[Document] = [
-        Document(page_content=chunk, metadata={"source": filename})
+        Document(page_content=chunk, metadata={"document_id": str(document_id), "source": filename, "filename": filename, "required_clearance": required_clearance, "category": category, "department": department or ""})
         for chunk in chunks
         if chunk.strip()
     ]
@@ -55,14 +58,32 @@ def ingest_document(filename: str, text: str) -> None:
 
     store = get_vector_store()
     store.add_documents(documents)
-    if hasattr(store, "persist"):
-        store.persist()
+
+
+def answer_authorized_question(question: str, clearance_level: int, department: str | None = None) -> tuple[str, list[dict[str, object]]]:
+    store = get_vector_store()
+    filters: dict[str, object] = {"required_clearance": {"$lte": clearance_level}}
+    matches = store.similarity_search_with_score(question, k=4, filter=filters)
+    if not matches:
+        return "I could not find this information in the authorized company documents.", []
+    context = "\n\n".join(document.page_content for document, _ in matches)
+    options = {"api_key": _require_api_key(), "model": LLM_MODEL, "temperature": 0.0}
+    if LLM_BASE_URL:
+        options["base_url"] = LLM_BASE_URL
+    llm = ChatOpenAI(**options)
+    response = llm.invoke(PROMPT_TEMPLATE.format(context=context, question=question))
+    answer = getattr(response, "content", str(response)).strip()
+    sources = [document.metadata for document, _ in matches]
+    return answer or "I could not find this information in the authorized company documents.", sources
 
 
 def answer_question(question: str) -> str:
     store = get_vector_store()
     retriever = store.as_retriever(search_kwargs={"k": 4})
-    llm = ChatOpenAI(api_key=_require_api_key(), model=LLM_MODEL, temperature=0.0)
+    options = {"api_key": _require_api_key(), "model": LLM_MODEL, "temperature": 0.0}
+    if LLM_BASE_URL:
+        options["base_url"] = LLM_BASE_URL
+    llm = ChatOpenAI(**options)
     qa = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
